@@ -2,63 +2,63 @@ import '@shopify/ui-extensions/preact';
 import {render} from 'preact';
 import {useState} from 'preact/hooks';
 
+// Ponto de entrada da extensão
 export default function extension() {
   render(<Extension />, document.body);
 }
 
 function Extension() {
-  // Se não puder alterar atributos, mostra só um aviso
-  if (!shopify.instructions.value.attributes.canUpdateAttributes) {
-    return (
-      <s-banner heading="Doações indisponíveis" tone="warning">
-        <s-text>
-          Neste tipo de checkout não é possível adicionar doações.
-        </s-text>
-      </s-banner>
-    );
-  }
+  // ✅ Variant ID da sua variante de doação
+  const DONATION_VARIANT_ID = "gid://shopify/ProductVariant/50806589030695";
 
-  const [tipo, setTipo] = useState('fixo');   // "fixo" ou "percentual"
-  const [valor, setValor] = useState('5');    // valor ou percentual
-  const [mensagem, setMensagem] = useState(''); // feedback visual
+  const [tipo, setTipo] = useState('fixo');
+  const [valor, setValor] = useState('');
+  const [mensagem, setMensagem] = useState('');
+
+  // Converte texto ("10", "10,50") em número
+  function parseValorBr(valorTexto) {
+    if (!valorTexto) return 0;
+    const limpo = valorTexto.replace('.', '').replace(',', '.').trim();
+    const num = Number(limpo);
+    return Number.isNaN(num) ? 0 : num;
+  }
 
   async function aplicarDoacao() {
-    setMensagem('Salvando doação...');
+    const numero = parseValorBr(valor);
 
-    const result = await shopify.applyAttributeChange({
-      type: 'updateAttribute',
-      key: 'doacao_arredondar',
-      value: JSON.stringify({ tipo, valor }),
-    });
-
-    if (result.type === 'success') {
-      setMensagem('Doação aplicada!');
-    } else {
-      console.log('Erro ao aplicar doação:', result);
-      setMensagem('Erro ao aplicar doação.');
+    if (!numero || numero <= 0) {
+      setMensagem('Informe um valor de doação válido.');
+      return;
     }
-  }
 
-  async function removerDoacao() {
-    setMensagem('Removendo doação...');
+    // 🧮 Regra simples: 1 unidade do produto de doação = R$ 1,00
+    // Ex: usuário digita "5" => quantity = 5 => R$ 5,00
+    const quantity = Math.round(numero);
 
-    const result = await shopify.applyAttributeChange({
-      type: 'updateAttribute',
-      key: 'doacao_arredondar',
-      value: '',
-    });
+    setMensagem('Aplicando doação...');
 
-    if (result.type === 'success') {
-      setMensagem('Doação removida.');
-    } else {
-      console.log('Erro ao remover doação:', result);
-      setMensagem('Erro ao remover doação.');
+    try {
+      const result = await shopify.applyCartLinesChange({
+        type: 'addCartLine',
+        merchandiseId: DONATION_VARIANT_ID,
+        quantity,
+      });
+
+      console.log('Resultado applyCartLinesChange:', result);
+
+      if (result.type === 'success') {
+        setMensagem('Doação aplicada ao seu pedido!');
+      } else {
+        setMensagem('Não foi possível aplicar a doação.');
+      }
+    } catch (error) {
+      console.error('Erro ao aplicar doação:', error);
+      setMensagem('Erro inesperado ao aplicar a doação.');
     }
   }
 
   function handleValorChange(event) {
-    // @ts-ignore – simplifica o acesso ao value
-    const novoValor = event.target && event.target.value ? event.target.value : '';
+    const novoValor = event?.target?.value ?? '';
     setValor(novoValor);
   }
 
@@ -66,14 +66,12 @@ function Extension() {
     <s-banner heading="Doe para o Instituto Arredondar">
       <s-stack gap="base">
         <s-text>
-          Ajude mais de 200 ONGs com uma pequena doação junto com a sua compra.
+          Ajude dezenas de ONGs apoiadas pelo Instituto Arredondar com uma pequena doação junto com a sua compra.
         </s-text>
 
-        <s-text>
-          Escolha o tipo de doação:
-        </s-text>
+        <s-text>Escolha o tipo de doação:</s-text>
 
-        {/* Botões para escolher Fixo ou Percentual (um embaixo do outro mesmo) */}
+        {/* Botão: Valor fixo */}
         <s-button
           variant={tipo === 'fixo' ? 'primary' : 'secondary'}
           onClick={() => setTipo('fixo')}
@@ -81,6 +79,7 @@ function Extension() {
           Valor fixo (R$)
         </s-button>
 
+        {/* Botão: Percentual (ainda não altera o cálculo, mas já deixa pronto visualmente) */}
         <s-button
           variant={tipo === 'percentual' ? 'primary' : 'secondary'}
           onClick={() => setTipo('percentual')}
@@ -90,22 +89,14 @@ function Extension() {
 
         {/* Campo de valor */}
         <s-text-field
-          label={
-            tipo === 'fixo'
-              ? 'Valor da doação (R$)'
-              : 'Percentual da compra (%)'
-          }
+          label={tipo === 'fixo' ? 'Valor da doação (R$)' : 'Percentual da compra (%)'}
           value={valor}
           onInput={handleValorChange}
         />
 
-        {/* Botões de aplicar/remover */}
+        {/* Botão de aplicar doação */}
         <s-button variant="primary" onClick={aplicarDoacao}>
           Aplicar doação
-        </s-button>
-
-        <s-button tone="critical" onClick={removerDoacao}>
-          Remover doação
         </s-button>
 
         {mensagem && (
